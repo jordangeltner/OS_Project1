@@ -199,6 +199,40 @@ static bool ResolveExternalCmd(commandT* cmd)
 
 static void Exec(commandT* cmd, bool forceFork)
 {
+  if (forceFork)
+  {
+    int childId = fork();
+    //TODO: add childId to joblist
+
+    //fork failed
+    if (childId < 0)
+    {
+       printf("Couldn't fork.\n");
+       return;
+    }
+
+    //we're in the child
+    else if (childId == 0)
+    {
+      printf("Running command %s in the fork.\n", cmd->name);
+      execvp(cmd->name, cmd->argv);
+      exit(EXIT_SUCCESS);
+    }
+    else
+    {
+      printf("WHAT?: %d\n", childId);
+    }
+  }
+  else
+  {
+    int i;
+    printf("Running cmd %s with args: \n", cmd->name);
+    for (i=0; i < cmd->argc; i++)
+    {
+      printf("%s\n", cmd->argv[i]);
+    }
+    execvp(cmd->name, cmd->argv);
+  }
   return; 
 }
 
@@ -216,7 +250,9 @@ static bool fileInDir(char* cmd, char* the_dir)
   {
     while ((ent = readdir (dir)) != NULL)
       if (strcmp(cmd, ent->d_name) == 0)
+      {
         return TRUE;
+      }
   }
   return FALSE;     
 }
