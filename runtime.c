@@ -48,6 +48,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <dirent.h>
 
 /************Private include**********************************************/
 #include "runtime.h"
@@ -85,6 +86,8 @@ static void Exec(commandT*, bool);
 static void RunBuiltInCmd(commandT*);
 /* checks whether a command is a builtin command */
 static bool IsBuiltIn(char*);
+/* checks whether a file is in the directory */
+static bool fileInDir(char*, char* the_dir);
 /************External Declaration*****************************************/
 
 /**************Implementation***********************************************/
@@ -108,6 +111,7 @@ void RunCmdFork(commandT* cmd, bool fork)
     return;
   if (IsBuiltIn(cmd->argv[0]))
   {
+    printf("Hey it's builtin: %s\n", cmd->argv[0]);
     RunBuiltInCmd(cmd);
   }
   else
@@ -195,10 +199,25 @@ static bool ResolveExternalCmd(commandT* cmd)
 
 static void Exec(commandT* cmd, bool forceFork)
 {
+  return; 
 }
 
 static bool IsBuiltIn(char* cmd)
 {
+  return fileInDir(cmd, "/bin");
+}
+
+static bool fileInDir(char* cmd, char* the_dir)
+{
+  //search through /bin for cmd and return true if its a member
+  DIR *dir;
+  struct dirent *ent; 
+  if ((dir = opendir (the_dir)) != NULL)
+  {
+    while ((ent = readdir (dir)) != NULL)
+      if (strcmp(cmd, ent->d_name) == 0)
+        return TRUE;
+  }
   return FALSE;     
 }
 

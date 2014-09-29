@@ -65,14 +65,14 @@ int main (int argc, char *argv[])
   /* Initialize command buffer */
   char* cmdLine = malloc(sizeof(char*)*BUFSIZE);
 
-  //printf("Hello, welcome to shell.\n");
-
   /* shell initialization */
   if (signal(SIGINT, sig) == SIG_ERR) PrintPError("SIGINT");
   if (signal(SIGTSTP, sig) == SIG_ERR) PrintPError("SIGTSTP");
 
   while (!forceExit) /* repeat forever */
   {
+
+    printf("tsh> ");
     /* read command line */
     getCommandLine(&cmdLine, BUFSIZE);
 
