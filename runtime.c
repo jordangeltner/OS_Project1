@@ -202,6 +202,7 @@ static void Exec(commandT* cmd, bool forceFork)
   if (forceFork)
   {
     int childId = fork();
+    int status;
     //TODO: add childId to joblist
 
     //fork failed
@@ -215,12 +216,18 @@ static void Exec(commandT* cmd, bool forceFork)
     else if (childId == 0)
     {
       printf("Running command %s in the fork.\n", cmd->name);
-      execvp(cmd->name, cmd->argv);
+      if (-1 == execvp(cmd->name, cmd->argv))
+        exit(EXIT_FAILURE);
       exit(EXIT_SUCCESS);
     }
+    //parent's execution
     else
     {
-      printf("WHAT?: %d\n", childId);
+      if (cmd->bg == 1)
+      {
+        waitpid(childId, &status, 0);
+      }
+      printf("Parent of: %d\n", childId);
     }
   }
   else
