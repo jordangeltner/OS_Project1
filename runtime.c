@@ -201,8 +201,9 @@ static void Exec(commandT* cmd, bool forceFork)
 {
   if (forceFork)
   {
-    int childId = fork();
+    pid_t childId = fork();
     int status;
+    
     //TODO: add childId to joblist
 
     //fork failed
@@ -227,6 +228,21 @@ static void Exec(commandT* cmd, bool forceFork)
       if (cmd->bg == 0)
       {
         waitpid(childId, &status, 0);
+      }
+//       typedef struct bgjob_l {
+//   pid_t pid;
+//   struct bgjob_l* next;
+// } bgjobL;
+// 
+// /* the pids of the background processes */
+// bgjobL *bgjobs = NULL;
+  //background job, so add to job list
+      else
+      {
+	bgjobL *job = malloc(sizeof(bgjobL));
+	job->pid = childId;
+	job->next = bgjobs;
+	bgjobs = job;
       }
     }
   }
