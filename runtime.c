@@ -88,6 +88,10 @@ static void RunBuiltInCmd(commandT*);
 static bool IsBuiltIn(char*);
 /* checks whether a file is in the directory */
 static bool fileInDir(char*, char* the_dir);
+/* checks what status of child process means and prints message */
+static void ChildStatus(int status,pid_t pid);
+/* sets bg field of cmd based on presence of & at end of argv */
+//static void set_bg(commandT* cmd);
 /************External Declaration*****************************************/
 
 /**************Implementation***********************************************/
@@ -199,6 +203,9 @@ static bool ResolveExternalCmd(commandT* cmd)
 
 static void Exec(commandT* cmd, bool forceFork)
 {
+  //first check if command is background command and set flag
+  //set_bg(cmd);
+  printf("background flag set to %d\n",cmd->bg);
   if (forceFork)
   {
     pid_t childId = fork();
@@ -229,13 +236,7 @@ static void Exec(commandT* cmd, bool forceFork)
       {
         waitpid(childId, &status, 0);
       }
-//       typedef struct bgjob_l {
-//   pid_t pid;
-//   struct bgjob_l* next;
-// } bgjobL;
-// 
-// /* the pids of the background processes */
-// bgjobL *bgjobs = NULL;
+
   //background job, so add to job list
       else
       {
@@ -291,8 +292,75 @@ static void RunBuiltInCmd(commandT* cmd)
 
 void CheckJobs()
 {
+  bgjobL *job = bgjobs;
+  bgjobL *prev_job = NULL;
+  int status;
+  pid_t idOut;
+  while(job != NULL){
+    idOut = waitpid(job->pid,&status,WNOHANG | WUNTRACED | WCONTINUED);
+    //check the status of child process
+    if (idOut ==-1){
+      //error in waitpid call
+      printf("waitpid failed to return on id %d",job->pid);
+      exit(EXIT_FAILURE);
+    }
+    else if (idOut==0){
+      //child running
+    }
+    else {
+      //child terminated, find out why then remove from job list
+      ChildStatus(status,job->pid);
+      if(prev_job == NULL){
+	bgjobs = job->next;
+	free(job);
+	job = bgjobs;
+	continue;
+      }
+      else{
+	prev_job->next = job->next;
+	free(job);
+	job = prev_job->next;
+	continue;
+      }
+    }
+    prev_job = job;
+    job = job->next;
+  }
+  
 }
 
+//informs CheckJobs what the status of the child process means
+// i.e. is it terminated? how? need to reap?
+void ChildStatus(int status,pid_t pid)
+{
+ if (WIFEXITED(status))
+   printf("Process %d exited normally.\n",pid);
+ else if (WIFSIGNALED(status))
+   printf("Process %d received a signal.\n",pid);
+ else if (WIFSTOPPED(status))
+   printf("Process %d was stopped while executing.\n",pid);
+ return;
+ 
+}
+
+//garbage
+// void set_bg(commandT* cmd){
+//   int j;
+//   printf("bg:::  %d\n",cmd->bg);
+//   for(j=0;j<cmd->argc;j++){
+//     printf("%d:%s\n",j,cmd->argv[j]);
+//   }
+//   //printf("set_bg:: %s\n",cmd->argv[cmd->argc]);
+//   if(strcmp(cmd->argv[cmd->argc],"&")==0){
+//     //background request
+//     cmd->bg = 1;
+//   }
+//   else{
+//     //not a background request
+//     cmd->bg = 0;
+//   }
+//   return;
+// }
 
 commandT* CreateCmdT(int n)
 {
