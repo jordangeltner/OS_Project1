@@ -111,7 +111,7 @@ void RunCmdFork(commandT* cmd, bool fork)
     return;
   if (IsBuiltIn(cmd->argv[0]))
   {
-    printf("Hey it's builtin: %s\n", cmd->argv[0]);
+ //   printf("Hey it's builtin: %s\n", cmd->argv[0]);
     RunBuiltInCmd(cmd);
   }
   else
@@ -223,22 +223,23 @@ static void Exec(commandT* cmd, bool forceFork)
     //parent's execution
     else
     {
-      if (cmd->bg == 1)
+      printf("Parent of: %d\n", childId);
+      if (cmd->bg == 0)
       {
         waitpid(childId, &status, 0);
       }
-      printf("Parent of: %d\n", childId);
     }
   }
   else
   {
-    int i;
-    printf("Running cmd %s with args: \n", cmd->name);
-    for (i=0; i < cmd->argc; i++)
-    {
-      printf("%s\n", cmd->argv[i]);
-    }
-    execvp(cmd->name, cmd->argv);
+    //debugging arguments for command execution
+//     int i;
+//     printf("Running cmd %s with args: \n", cmd->argv[0]);
+//     for (i=1; i < cmd->argc; i++)
+//     {
+//       printf("%s\n", cmd->argv[i]);
+//     }
+    execvp(cmd->argv[0], cmd->argv);
   }
   return; 
 }
@@ -267,6 +268,9 @@ static bool fileInDir(char* cmd, char* the_dir)
 
 static void RunBuiltInCmd(commandT* cmd)
 {
+  cmd->name = cmd->argv[0];
+  Exec(cmd, TRUE);
+  return;
 }
 
 void CheckJobs()
