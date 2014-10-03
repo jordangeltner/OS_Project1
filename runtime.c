@@ -310,7 +310,7 @@ static void RunBuiltInCmd(commandT* cmd)
   cmd->name = cmd->argv[0];
   //hardcoded commands
   //bg
-  if(strcmp(cmd->argv[0],"bg")==0){
+  if((strcmp(cmd->argv[0],"bg")==0) && (bgjobs!=NULL)){
     //send signal to most recent bg job (head of job list)
     if(cmd->argv[1]==NULL){
       kill(bgjobs->pid,SIGCONT);
