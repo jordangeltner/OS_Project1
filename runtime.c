@@ -85,11 +85,15 @@ static void Exec(commandT*, bool);
 /* runs a builtin command */
 static void RunBuiltInCmd(commandT*);
 /* checks whether a command is a builtin command */
-static bool IsBuiltIn(char*);
+static bool IsBuiltIn(commandT*);
 /* checks whether a file is in the directory */
 static bool fileInDir(char*, char* the_dir);
 /* checks what status of child process means and prints message */
-static void ChildStatus(int status,pid_t pid);
+static int ChildStatus(int status,pid_t pid);
+/* checks the length of the backgrounded jobs list */
+static int joblist_length();
+/* print out table of jobs */
+static void jobscall();
 /* sets bg field of cmd based on presence of & at end of argv */
 //static void set_bg(commandT* cmd);
 /************External Declaration*****************************************/
@@ -109,11 +113,14 @@ void RunCmd(commandT** cmd, int n)
   }
 }
 
+
+//prints cmd args 1 and 2
+//  printf("arg1:%s   arg2:%s",cmd[0]->argv[0],cmd[0]->argv[1]);
 void RunCmdFork(commandT* cmd, bool fork)
 {
   if (cmd->argc<=0)
     return;
-  if (IsBuiltIn(cmd->argv[0]))
+  if (IsBuiltIn(cmd))
   {
  //   printf("Hey it's builtin: %s\n", cmd->argv[0]);
     RunBuiltInCmd(cmd);
@@ -211,7 +218,6 @@ static void Exec(commandT* cmd, bool forceFork)
     pid_t childId = fork();
     int status;
     
-    //TODO: add childId to joblist
 
     //fork failed
     if (childId < 0)
@@ -244,6 +250,7 @@ static void Exec(commandT* cmd, bool forceFork)
 	job->pid = childId;
 	job->next = bgjobs;
 	bgjobs = job;
+	printf("[%d] %d\n",joblist_length(),childId);
       }
     }
   }
@@ -261,11 +268,26 @@ static void Exec(commandT* cmd, bool forceFork)
   return; 
 }
 
-static bool IsBuiltIn(char* cmd)
-{
-  return fileInDir(cmd, "/bin");
+static int joblist_length(){
+  int k=0;
+  bgjobL *localbgjobs = bgjobs;
+  while(localbgjobs!=NULL){
+    k++;
+    localbgjobs = localbgjobs->next;
+  }
+  return k;
 }
 
+static bool IsBuiltIn(commandT* cmd)
+{
+  //if the cmd is bg, fg, jobs, or cd it's built in so return True.
+  return (strcmp(cmd->argv[0],"bg")==0) || (strcmp(cmd->argv[0],"jobs")==0) ||(strcmp(cmd->argv[0],"fg")==0) ||
+         (strcmp(cmd->argv[0],"cd")==0);
+}
+
+
+//fileInDir was sourced from the following page.
+//http://stackoverflow.com/questions/612097/how-can-i-get-a-list-of-files-in-a-directory-using-c-or-c
 static bool fileInDir(char* cmd, char* the_dir)
 {
   //search through /bin for cmd and return true if its a member
@@ -286,7 +308,26 @@ static bool fileInDir(char* cmd, char* the_dir)
 static void RunBuiltInCmd(commandT* cmd)
 {
   cmd->name = cmd->argv[0];
-  Exec(cmd, TRUE);
+  //hardcoded commands
+  //bg
+  if(strcmp(cmd->argv[0],"bg")==0){
+    //send signal to most recent bg job (head of job list)
+    if(cmd->argv[1]==NULL){
+      kill(bgjobs->pid,SIGCONT);
+    }
+    //send signal to specified pid
+    else{
+      pid_t localpid = atoi(cmd->argv[1]);
+      kill(localpid,SIGCONT);
+    }
+  }
+  else if(strcmp(cmd->argv[0],"jobs")==0){
+    jobscall();
+  }
+  else if(strcmp(cmd->argv[0],"fg")==0){
+  }
+  else if(strcmp(cmd->argv[0],"cd")==0){
+  }
   return;
 }
 
@@ -307,20 +348,24 @@ void CheckJobs()
     else if (idOut==0){
       //child running
     }
+     //child not running, find out why (stopped or exited) then remove from job list
     else {
-      //child terminated, find out why then remove from job list
-      ChildStatus(status,job->pid);
-      if(prev_job == NULL){
-	bgjobs = job->next;
-	free(job);
-	job = bgjobs;
+      //child process exited
+      if(ChildStatus(status,job->pid)==0){
+	if(prev_job == NULL){
+	  bgjobs = job->next;
+	  free(job);
+	  job = bgjobs;
+	}
+	else{
+	  prev_job->next = job->next;
+	  free(job);
+	  job = prev_job->next;
+	}
 	continue;
       }
+      //child process stopped
       else{
-	prev_job->next = job->next;
-	free(job);
-	job = prev_job->next;
-	continue;
       }
     }
     prev_job = job;
@@ -329,18 +374,69 @@ void CheckJobs()
   
 }
 
+static void jobscall()
+{
+  bgjobL *job = bgjobs;
+  int status;
+  pid_t idOut;
+  int k =0;
+  char current;
+  while(job != NULL){
+    char* state;
+    k++;
+    idOut = waitpid(job->pid,&status,WNOHANG | WUNTRACED | WCONTINUED);
+    //check the status of child process
+    if (idOut ==-1){
+      //error in waitpid call
+      printf("waitpid failed to return on id %d",job->pid);
+      exit(EXIT_FAILURE);
+    }
+    else if (idOut==0){
+      //child running
+      state = strdup("Running");
+    }
+     //child not running, find out why (stopped or exited) then remove from job list
+    else {
+      //child process exited
+      if(ChildStatus(status,job->pid)==0){
+	state = strdup("Terminated");
+      }
+      //child process stopped
+      else{
+	state = strdup("Stopped");
+      }
+    }
+    job = job->next;
+    if(k==1){
+      current = '+';
+    }
+    else if(k==2){
+      current = '-';
+    }
+    else{
+      current = ' ';
+    }
+    // add command line to job list
+    printf("[%d] %c %s\n",k,current,state);
+  }
+  
+}
+
+
 //informs CheckJobs what the status of the child process means
 // i.e. is it terminated? how? need to reap?
-void ChildStatus(int status,pid_t pid)
+// return 0 if program exited, 1 if stopped
+int ChildStatus(int status,pid_t pid)
 {
  if (WIFEXITED(status))
    printf("Process %d exited normally.\n",pid);
  else if (WIFSIGNALED(status))
    printf("Process %d received a signal.\n",pid);
- else if (WIFSTOPPED(status))
+ else if (WIFSTOPPED(status)){
    printf("Process %d was stopped while executing.\n",pid);
- return;
- 
+   return 1;
+ }
+ return 0;
 }
 
 //garbage
