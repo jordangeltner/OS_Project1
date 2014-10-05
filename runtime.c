@@ -253,7 +253,8 @@ static void Exec(commandT* cmd, bool forceFork)
         job->cmd = CreateCmdT(cmd->argc);
         job->cmd->cmdline = cmd->cmdline;
 	bgjobs = job;
-	printf("[%d] %d\n",joblist_length(),childId);
+        //test printouts don't print this.
+	//printf("[%d] %d\n",joblist_length(),childId);
       }
     }
   }
@@ -334,7 +335,9 @@ void CheckJobs()
   bgjobL *prev_job = NULL;
   int status;
   pid_t idOut;
+  int k = 0;
   while(job != NULL){
+    k++;
     idOut = waitpid(job->pid,&status,WNOHANG | WUNTRACED | WCONTINUED);
     //check the status of child process
     if (idOut ==-1){
@@ -349,6 +352,7 @@ void CheckJobs()
     else {
       //child process exited
       if(ChildStatus(status,job->pid)==0){
+         printf("[%d] Done %s\n", k, job->cmd->cmdline);
 	if(prev_job == NULL){
           // free up memory used by old job, move pointer to next
 	  bgjobs = job->next;
@@ -386,6 +390,15 @@ static void jobscall()
   while(job != NULL){
     char* state;
     k++;
+    if(k==1){
+      current = '+';
+    }
+    else if(k==2){
+      current = '-';
+    }
+    else{
+      current = ' ';
+    }
     idOut = waitpid(job->pid,&status,WNOHANG | WUNTRACED | WCONTINUED);
     //check the status of child process
     if (idOut ==-1){
@@ -401,21 +414,14 @@ static void jobscall()
     else {
       //child process exited
       if(ChildStatus(status,job->pid)==0){
-	state = strdup("Terminated");
+	state = strdup("Done");
+        printf("[%d] %c %s %s\n", k, current, state, job->cmd->cmdline);
       }
       //child process stopped
       else{
 	state = strdup("Stopped");
+        printf("[%d] %c %s %s\n", k, current, state, job->cmd->cmdline);
       }
-    }
-    if(k==1){
-      current = '+';
-    }
-    else if(k==2){
-      current = '-';
-    }
-    else{
-      current = ' ';
     }
     // add command line to job list
     printf("[%d] %c %s %s\n", k, current, state, job->cmd->cmdline);
@@ -431,7 +437,7 @@ static void jobscall()
 int ChildStatus(int status,pid_t pid)
 {
  if (WIFEXITED(status))
-   printf("Process %d exited normally.\n",pid);
+   return 0;
  else if (WIFSIGNALED(status))
    printf("Process %d received a signal.\n",pid);
  else if (WIFSTOPPED(status)){
