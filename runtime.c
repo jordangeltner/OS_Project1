@@ -247,12 +247,27 @@ static void Exec(commandT* cmd, bool forceFork)
   //background job, so add to job list
       else
       {
-	bgjobL *job = malloc(sizeof(bgjobL));
+	bgjobL *job = bgjobs;
+        bgjobL *prev;
+
+        //add new job to end of job list
+        while(job != NULL){
+          prev = job;
+          job = job->next;
+        }
+
+        //allocate new space for the new job
+        job = malloc(sizeof(bgjobL));
 	job->pid = childId;
-	job->next = bgjobs;
+	job->next = NULL;
         job->cmd = CreateCmdT(cmd->argc);
         job->cmd->cmdline = cmd->cmdline;
-	bgjobs = job;
+
+        //if this is the first job
+        if (bgjobs == NULL)
+          bgjobs = job;
+        else
+          prev->next = job;
         //test printouts don't print this.
 	//printf("[%d] %d\n",joblist_length(),childId);
       }
@@ -441,6 +456,8 @@ static void jobscall()
     else{
       current = ' ';
     }
+    //test cases don't have this..
+    current = ' ';
     idOut = waitpid(job->pid,&status,WNOHANG | WUNTRACED | WCONTINUED);
     //check the status of child process
     if (idOut ==-1){
