@@ -72,7 +72,7 @@ int main (int argc, char *argv[])
   while (!forceExit) /* repeat forever */
   {
 
-    printf("tsh> ");
+    //printf("tsh> ");
     /* read command line */
     getCommandLine(&cmdLine, BUFSIZE);
 

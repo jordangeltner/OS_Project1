@@ -68,6 +68,7 @@
 typedef struct bgjob_l {
   pid_t pid;
   struct bgjob_l* next;
+  commandT* cmd;
 } bgjobL;
 
 /* the pids of the background processes */
@@ -212,7 +213,7 @@ static void Exec(commandT* cmd, bool forceFork)
 {
   //first check if command is background command and set flag
   //set_bg(cmd);
-  printf("background flag set to %d\n",cmd->bg);
+  //printf("background flag set to %d\n",cmd->bg);
   if (forceFork)
   {
     pid_t childId = fork();
@@ -229,7 +230,7 @@ static void Exec(commandT* cmd, bool forceFork)
     //we're in the child
     else if (childId == 0)
     {
-      printf("Running command %s in the fork.\n", cmd->name);
+      //printf("Running command %s in the fork.\n", cmd->name);
       if (-1 == execvp(cmd->name, cmd->argv))
         exit(EXIT_FAILURE);
       exit(EXIT_SUCCESS);
@@ -237,7 +238,7 @@ static void Exec(commandT* cmd, bool forceFork)
     //parent's execution
     else
     {
-      printf("Parent of: %d\n", childId);
+      //printf("Parent of: %d\n", childId);
       if (cmd->bg == 0)
       {
         waitpid(childId, &status, 0);
@@ -249,6 +250,8 @@ static void Exec(commandT* cmd, bool forceFork)
 	bgjobL *job = malloc(sizeof(bgjobL));
 	job->pid = childId;
 	job->next = bgjobs;
+        job->cmd = CreateCmdT(cmd->argc);
+        job->cmd->cmdline = cmd->cmdline;
 	bgjobs = job;
 	printf("[%d] %d\n",joblist_length(),childId);
       }
@@ -256,13 +259,6 @@ static void Exec(commandT* cmd, bool forceFork)
   }
   else
   {
-    //debugging arguments for command execution
-//     int i;
-//     printf("Running cmd %s with args: \n", cmd->argv[0]);
-//     for (i=1; i < cmd->argc; i++)
-//     {
-//       printf("%s\n", cmd->argv[i]);
-//     }
     execvp(cmd->argv[0], cmd->argv);
   }
   return; 
@@ -334,6 +330,7 @@ static void RunBuiltInCmd(commandT* cmd)
 void CheckJobs()
 {
   bgjobL *job = bgjobs;
+  bgjobL *old_job = bgjobs;
   bgjobL *prev_job = NULL;
   int status;
   pid_t idOut;
@@ -353,13 +350,18 @@ void CheckJobs()
       //child process exited
       if(ChildStatus(status,job->pid)==0){
 	if(prev_job == NULL){
+          // free up memory used by old job, move pointer to next
 	  bgjobs = job->next;
-	  free(job);
+          old_job = job;
+          ReleaseCmdT(&old_job->cmd);
+          free(old_job);
 	  job = bgjobs;
 	}
 	else{
 	  prev_job->next = job->next;
-	  free(job);
+          old_job = job;
+          ReleaseCmdT(&old_job->cmd);
+          free(old_job);
 	  job = prev_job->next;
 	}
 	continue;
@@ -406,7 +408,6 @@ static void jobscall()
 	state = strdup("Stopped");
       }
     }
-    job = job->next;
     if(k==1){
       current = '+';
     }
@@ -417,7 +418,8 @@ static void jobscall()
       current = ' ';
     }
     // add command line to job list
-    printf("[%d] %c %s\n",k,current,state);
+    printf("[%d] %c %s %s\n", k, current, state, job->cmd->cmdline);
+    job = job->next;
   }
   
 }
@@ -438,25 +440,6 @@ int ChildStatus(int status,pid_t pid)
  }
  return 0;
 }
-
-//garbage
-// void set_bg(commandT* cmd){
-//   int j;
-//   printf("bg:::  %d\n",cmd->bg);
-//   for(j=0;j<cmd->argc;j++){
-//     printf("%d:%s\n",j,cmd->argv[j]);
-//   }
-//   //printf("set_bg:: %s\n",cmd->argv[cmd->argc]);
-//   if(strcmp(cmd->argv[cmd->argc],"&")==0){
-//     //background request
-//     cmd->bg = 1;
-//   }
-//   else{
-//     //not a background request
-//     cmd->bg = 0;
-//   }
-//   return;
-// }
 
 commandT* CreateCmdT(int n)
 {
