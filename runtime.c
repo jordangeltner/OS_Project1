@@ -208,7 +208,19 @@ static bool ResolveExternalCmd(commandT* cmd)
   }
   return FALSE; /*The command is not found or the user don't have enough priority to run.*/
 }
-
+/*
+static int our_execv(char *file, char *const argv[])
+{
+  char *path;
+  char *buf;
+  getcwd(buf, 100);
+  if (fileInDir(file, buf)){
+    return execv(strcat(strcat(buf, "/"), file), argv);
+  }
+  path = getenv("PATH");
+  return execv(path, argv);
+}
+*/
 static void Exec(commandT* cmd, bool forceFork)
 {
   //first check if command is background command and set flag
@@ -231,7 +243,7 @@ static void Exec(commandT* cmd, bool forceFork)
     else if (childId == 0)
     {
       //printf("Running command %s in the fork.\n", cmd->name);
-      if (-1 == execvp(cmd->name, cmd->argv))
+      if (-1 == execv(cmd->name, cmd->argv))
         exit(EXIT_FAILURE);
       exit(EXIT_SUCCESS);
     }
@@ -260,7 +272,7 @@ static void Exec(commandT* cmd, bool forceFork)
   }
   else
   {
-    execvp(cmd->argv[0], cmd->argv);
+    execv(cmd->name, cmd->argv);
   }
   return; 
 }
@@ -287,7 +299,7 @@ static bool IsBuiltIn(commandT* cmd)
 //http://stackoverflow.com/questions/612097/how-can-i-get-a-list-of-files-in-a-directory-using-c-or-c
 static bool fileInDir(char* cmd, char* the_dir)
 {
-  //search through /bin for cmd and return true if its a member
+  //search through dir for cmd and return true if its a member
   DIR *dir;
   struct dirent *ent; 
   if ((dir = opendir (the_dir)) != NULL)
