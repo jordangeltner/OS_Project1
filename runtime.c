@@ -208,19 +208,7 @@ static bool ResolveExternalCmd(commandT* cmd)
   }
   return FALSE; /*The command is not found or the user don't have enough priority to run.*/
 }
-/*
-static int our_execv(char *file, char *const argv[])
-{
-  char *path;
-  char *buf;
-  getcwd(buf, 100);
-  if (fileInDir(file, buf)){
-    return execv(strcat(strcat(buf, "/"), file), argv);
-  }
-  path = getenv("PATH");
-  return execv(path, argv);
-}
-*/
+
 static void Exec(commandT* cmd, bool forceFork)
 {
   //first check if command is background command and set flag
@@ -337,6 +325,10 @@ static void RunBuiltInCmd(commandT* cmd)
     fgcall(cmd);
   }
   else if(strcmp(cmd->argv[0],"cd")==0){
+    if (cmd->argc >= 2){
+      if(-1 == chdir(cmd->argv[1]))
+        printf("Failed to change to %s\n",cmd->argv[1]);
+    }
   }
   return;
 }
