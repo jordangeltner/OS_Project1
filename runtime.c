@@ -95,8 +95,8 @@ static int ChildStatus(int status,pid_t pid);
 static int joblist_length();
 /* print out table of jobs */
 static void jobscall();
-/* sets bg field of cmd based on presence of & at end of argv */
-//static void set_bg(commandT* cmd);
+/* foreground the given job or the next one */
+static void fgcall(commandT* cmd);
 /************External Declaration*****************************************/
 
 /**************Implementation***********************************************/
@@ -322,6 +322,7 @@ static void RunBuiltInCmd(commandT* cmd)
     jobscall();
   }
   else if(strcmp(cmd->argv[0],"fg")==0){
+    fgcall(cmd);
   }
   else if(strcmp(cmd->argv[0],"cd")==0){
   }
@@ -378,6 +379,43 @@ void CheckJobs()
     job = job->next;
   }
   
+}
+
+static void fgcall(commandT* cmd){
+  bgjobL *job = bgjobs;
+  int status;
+  int k = 0;
+  pid_t target = -1;
+  //no argument given, foreground default value from joblist if there is one
+  if (cmd->argc == 1){
+    target = job->pid;
+  }
+  //match either job_id or job number to joblist
+  else{
+    pid_t match_id = atoi(cmd->argv[1]);
+    while(job != NULL){
+      k++;
+      if (match_id == k || match_id == job->pid){
+        target = job->pid;
+        break;
+      }
+      job = job->next;
+    }
+  }
+  if (target > 0){
+    waitpid(target, &status, 0);
+    if(ChildStatus(status,target)==0){
+      printf("[1] Done %s\n", job->cmd->cmdline);
+    }
+    else
+      printf("Stopped %s\n", job->cmd->cmdline);
+  }
+  else{
+    if (cmd->argc == 1)
+      printf("fg: current: no such job\n");
+    else
+      printf("fg: %s: no such job\n",cmd->argv[1]);
+  }
 }
 
 static void jobscall()
