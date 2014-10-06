@@ -64,7 +64,6 @@ int main (int argc, char *argv[])
 {
   /* Initialize command buffer */
   char* cmdLine = malloc(sizeof(char*)*BUFSIZE);
-
   /* shell initialization */
   if (signal(SIGINT, sig) == SIG_ERR) PrintPError("SIGINT");
   if (signal(SIGTSTP, sig) == SIG_ERR) PrintPError("SIGTSTP");
@@ -98,14 +97,7 @@ int main (int argc, char *argv[])
 
 static void sig(int signo)
 {
-  switch (signo){
-    case SIGINT:
-      //interrupt and terminate the foreground jobs
-      break;
-    case SIGTSTP:
-      //interrupt 
-      break;
-  }
+  kill(getfgpgid(),signo);
   return;
 }
 

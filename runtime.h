@@ -178,4 +178,6 @@ EXTERN void CheckJobs();
 
 /**************Definition***************************************************/
 
+EXTERN pid_t getfgpgid();
+
 #endif /* __RUNTIME_H__ */

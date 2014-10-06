@@ -74,6 +74,10 @@ typedef struct bgjob_l {
 /* the pids of the background processes */
 bgjobL *bgjobs = NULL;
 
+// the current foreground process group id
+pid_t g_fgpgid = 0;
+
+
 /************Function Prototypes******************************************/
 /* run command */
 static void RunCmdFork(commandT*, bool);
@@ -97,9 +101,16 @@ static int joblist_length();
 static void jobscall();
 /* foreground the given job or the next one */
 static void fgcall(commandT* cmd);
-/************External Declaration*****************************************/
+/* gets our fgpgid for tsh.c signal handler*/
+pid_t getfgpgid();
+/************External Declaration******************************************/
 
 /**************Implementation***********************************************/
+
+
+pid_t getfgpgid(){
+  return g_fgpgid;
+}
 int total_task;
 void RunCmd(commandT** cmd, int n)
 {
@@ -224,12 +235,23 @@ static void Exec(commandT* cmd, bool forceFork)
     if (childId < 0)
     {
        printf("Couldn't fork.\n");
+       fflush(stdout);
        return;
     }
 
     //we're in the child
     else if (childId == 0)
     {
+      //background job, so set unique pgid
+      setpgid(0,0);
+//       if (cmd->bg != 0){
+// 	setpgid(0,0);
+//       }
+//       //foreground job, so set pgid to -ppid
+//       else{
+// 	printf("CHILD: ppid:%d  pid:%d  pgid:%d\n",getppid(),getpid(),getpgid(getpid()));
+// 	fflush(stdout);
+//       }
       //printf("Running command %s in the fork.\n", cmd->name);
       if (-1 == execv(cmd->name, cmd->argv))
         exit(EXIT_FAILURE);
@@ -241,6 +263,9 @@ static void Exec(commandT* cmd, bool forceFork)
       //printf("Parent of: %d\n", childId);
       if (cmd->bg == 0)
       {
+// 	printf("PARENT: ppid:%d  pid:%d  pgid:%d\n",getppid(),getpid(),getpgid(getpid()));
+// 	fflush(stdout);
+	g_fgpgid = childId;
         waitpid(childId, &status, 0);
       }
 
@@ -248,7 +273,7 @@ static void Exec(commandT* cmd, bool forceFork)
       else
       {
 	bgjobL *job = bgjobs;
-        bgjobL *prev;
+        bgjobL *prev = NULL;
 
         //add new job to end of job list
         while(job != NULL){
@@ -341,8 +366,10 @@ static void RunBuiltInCmd(commandT* cmd)
   }
   else if(strcmp(cmd->argv[0],"cd")==0){
     if (cmd->argc >= 2){
-      if(-1 == chdir(cmd->argv[1]))
+      if(-1 == chdir(cmd->argv[1])){
         printf("Failed to change to %s\n",cmd->argv[1]);
+	fflush(stdout);
+      }
     }
   }
   return;
@@ -363,6 +390,7 @@ void CheckJobs()
     if (idOut ==-1){
       //error in waitpid call
       printf("waitpid failed to return on id %d",job->pid);
+      fflush(stdout);
       exit(EXIT_FAILURE);
     }
     else if (idOut==0){
@@ -373,6 +401,7 @@ void CheckJobs()
       //child process exited
       if(ChildStatus(status,job->pid)==0){
          printf("[%d] Done %s\n", k, job->cmd->cmdline);
+	 fflush(stdout);
 	if(prev_job == NULL){
           // free up memory used by old job, move pointer to next
 	  bgjobs = job->next;
@@ -425,15 +454,22 @@ static void fgcall(commandT* cmd){
     waitpid(target, &status, 0);
     if(ChildStatus(status,target)==0){
       printf("[1] Done %s\n", job->cmd->cmdline);
+      fflush(stdout);
     }
-    else
+    else{
       printf("Stopped %s\n", job->cmd->cmdline);
+      fflush(stdout);
+    }
   }
   else{
-    if (cmd->argc == 1)
+    if (cmd->argc == 1){
       printf("fg: current: no such job\n");
-    else
+      fflush(stdout);
+    }
+    else{
       printf("fg: %s: no such job\n",cmd->argv[1]);
+      fflush(stdout);
+    }
   }
 }
 
@@ -463,6 +499,7 @@ static void jobscall()
     if (idOut ==-1){
       //error in waitpid call
       printf("waitpid failed to return on id %d",job->pid);
+      fflush(stdout);
       exit(EXIT_FAILURE);
     }
     else if (idOut==0){
@@ -474,16 +511,19 @@ static void jobscall()
       //child process exited
       if(ChildStatus(status,job->pid)==0){
 	state = strdup("Done");
-        printf("[%d] %c %s %s\n", k, current, state, job->cmd->cmdline);
+        printf("[%d] %c %s %s &\n", k, current, state, job->cmd->cmdline);
+	fflush(stdout);
       }
       //child process stopped
       else{
 	state = strdup("Stopped");
-        printf("[%d] %c %s %s\n", k, current, state, job->cmd->cmdline);
+        printf("[%d] %c %s %s &\n", k, current, state, job->cmd->cmdline);
+	fflush(stdout);
       }
     }
     // add command line to job list
-    printf("[%d] %c %s %s\n", k, current, state, job->cmd->cmdline);
+    printf("[%d] %c %s %s &\n", k, current, state, job->cmd->cmdline);
+    fflush(stdout);
     job = job->next;
   }
   
@@ -497,10 +537,13 @@ int ChildStatus(int status,pid_t pid)
 {
  if (WIFEXITED(status))
    return 0;
- else if (WIFSIGNALED(status))
+ else if (WIFSIGNALED(status)){
    printf("Process %d received a signal.\n",pid);
+   fflush(stdout);
+ }
  else if (WIFSTOPPED(status)){
    printf("Process %d was stopped while executing.\n",pid);
+   fflush(stdout);
    return 1;
  }
  return 0;
