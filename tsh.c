@@ -98,5 +98,14 @@ int main (int argc, char *argv[])
 
 static void sig(int signo)
 {
+  switch (signo){
+    case SIGINT:
+      //interrupt and terminate the foreground jobs
+      break;
+    case SIGTSTP:
+      //interrupt 
+      break;
+  }
+  return;
 }
 
