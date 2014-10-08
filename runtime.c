@@ -75,7 +75,7 @@ typedef struct bgjob_l {
 bgjobL *bgjobs = NULL;
 
 // the current foreground process group id
-pid_t g_fgpgid = 0;
+pid_t g_fgpgid = 1;
 
 
 /************Function Prototypes******************************************/
