@@ -72,6 +72,7 @@ typedef struct bgjob_l {
   struct bgjob_l* next;
   commandT* cmd;
   int status;
+  int jid;
 } bgjobL;
 
 typedef struct alias_l {
@@ -120,6 +121,10 @@ static void unalias(char* name);
 static int ChildStatus(int status,pid_t pid);
 /* print out table of jobs */
 static void jobscall();
+/* adds a job to the job list */
+static void addjob(commandT* cmd, pid_t childId);
+/* finds the lowest available jid */
+static pid_t getLowJid();
 /* foreground the given job or the next one */
 static void fgcall(commandT* cmd);
 /* gets our fgpgid for tsh.c signal handler*/
@@ -327,31 +332,7 @@ static void Exec(commandT* cmd, bool forceFork)
   //background job, so add to job list
       else
       {
-	printf("bg:%s pid:%d ppid:%d\n",cmd->cmdline,childId,getpid());
-	fflush(stdout);
-	bgjobL *job = bgjobs;
-        bgjobL *prev = NULL;
-
-        //add new job to end of job list
-        while(job != NULL){
-          prev = job;
-          job = job->next;
-        }
-
-        //allocate new space for the new job
-        job = malloc(sizeof(bgjobL));
-	job->pid = childId;
-	job->next = NULL;
-        job->cmd = CreateCmdT(cmd->argc);
-        job->cmd->cmdline = cmd->cmdline;
-	job->status = -1;
-
-        //if this is the first job
-        if (bgjobs == NULL)
-          bgjobs = job;
-        else
-          prev->next = job;
-	
+	addjob(cmd, childId);
 	//job has been added, so unblock SIGCHLD
 	sigprocmask(SIG_UNBLOCK,&childset,NULL);
       }
@@ -362,6 +343,53 @@ static void Exec(commandT* cmd, bool forceFork)
     execv(cmd->name, cmd->argv);
   }
   return; 
+}
+
+static void addjob(commandT* cmd, pid_t childId)
+{
+  printf("bg:%s pid:%d ppid:%d\n",cmd->cmdline,childId,getpid());
+  fflush(stdout);
+  bgjobL *job = bgjobs;
+  bgjobL *prev = NULL;
+
+  //add new job to end of job list
+  while(job != NULL){
+    prev = job;
+    job = job->next;
+  }
+
+  //allocate new space for the new job
+  job = malloc(sizeof(bgjobL));
+  job->pid = childId;
+  job->next = NULL;
+  job->cmd = CreateCmdT(cmd->argc);
+  job->cmd->cmdline = cmd->cmdline;
+  job->status = -1;
+  job->jid = getLowJid();
+
+  //if this is the first job
+  if (bgjobs == NULL)
+    bgjobs = job;
+  else
+    prev->next = job;
+}
+
+static pid_t getLowJid()
+{
+  //min jid is 1, check each job very slowly. O(n!)
+  bgjobL* job = bgjobs;
+  pid_t result = 1;
+
+  //iterate through copy while removing matches (SUPER DUMB)
+  while (job != NULL){
+    if (result == job->jid){
+      job = bgjobs;
+      result++;
+    }
+    else
+      job = job->next;
+  }
+  return result;
 }
 
 int edit_bgjob_status(pid_t pid, int status){
@@ -672,11 +700,9 @@ static void fgcall(commandT* cmd){
 static void jobscall()
 {
   bgjobL *job = bgjobs;
-  int k =0;
 //   char current;
   while(job != NULL){
     char* state;
-    k++;
 //     if(k==1){
 //       current = '+';
 //     }
@@ -703,7 +729,7 @@ static void jobscall()
       state = strdup("Stopped                 ");
     }
     // add command line to job list
-    printf("[%d]   %s %s &\n", k, state, job->cmd->cmdline);
+    printf("[%d]   %s %s &\n", job->jid, state, job->cmd->cmdline);
     fflush(stdout);
     job = job->next;
   }
