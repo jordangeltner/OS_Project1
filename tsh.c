@@ -34,6 +34,8 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <sys/types.h>
 
 /************Private include**********************************************/
 #include "tsh.h"
@@ -50,7 +52,7 @@
 
 #define BUFSIZE 80
 
-/************Global Variables*********************************************/
+/************Global Variables*************************************/
 
 /************Function Prototypes******************************************/
 /* handles SIGINT and SIGSTOP signals */	
@@ -67,6 +69,8 @@ int main (int argc, char *argv[])
   /* shell initialization */
   if (signal(SIGINT, sig) == SIG_ERR) PrintPError("SIGINT");
   if (signal(SIGTSTP, sig) == SIG_ERR) PrintPError("SIGTSTP");
+  if (signal(SIGCHLD, sig) == SIG_ERR) PrintPError("SIGCHLD");
+  
 
   while (!forceExit) /* repeat forever */
   {
@@ -97,7 +101,30 @@ int main (int argc, char *argv[])
 
 static void sig(int signo)
 {
-  kill(getfgpgid(),signo);
+  int status;
+  if(signo==SIGCHLD){
+    pid_t pid = waitpid(-1,&status,WNOHANG | WUNTRACED | WCONTINUED);
+    printf("SIGCHLD pid:%d\n",pid);
+    while(pid>0){
+      if(getfgpgid()==pid){
+	//foreground, so release the busy loop
+	set_waitfg();
+      }
+      else{
+	//background
+	edit_bgjob_status(pid,status);
+      }
+      pid = waitpid(-1,&status,WNOHANG | WUNTRACED | WCONTINUED);
+    }
+    return;
+  }
+  pid_t pid = waitpid(-1,&status,WNOHANG | WUNTRACED | WCONTINUED);
+  while(pid>0){
+    printf("fgpgid:%d  pid:%d exited:%d\n",getfgpgid(), pid, WIFEXITED(status));
+    fflush(stdout);
+    pid = waitpid(-1,&status,WNOHANG | WUNTRACED);
+  }
+  //kill(0,signo);
   return;
 }
 

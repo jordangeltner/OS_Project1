@@ -179,5 +179,7 @@ EXTERN void CheckJobs();
 /**************Definition***************************************************/
 
 EXTERN pid_t getfgpgid();
+EXTERN void set_waitfg();
+EXTERN int edit_bgjob_status(pid_t,int);
 
 #endif /* __RUNTIME_H__ */
