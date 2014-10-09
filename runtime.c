@@ -49,10 +49,12 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <dirent.h>
+#include <pwd.h>
 
 /************Private include**********************************************/
 #include "runtime.h"
 #include "io.h"
+#include "interpreter.h"
 
 /************Defines and Typedefs*****************************************/
 /*  #defines and typedefs should have their names in all caps.
@@ -72,8 +74,17 @@ typedef struct bgjob_l {
   int status;
 } bgjobL;
 
+typedef struct alias_l {
+  char* name;
+  char* cmdline;
+  struct alias_l* next;
+} aliasL;
+
 /* the pids of the background processes */
 bgjobL *bgjobs = NULL;
+
+/* alias list */
+aliasL *aliases = NULL;
 
 // the current foreground process group id
 pid_t g_fgpgid = 1;
@@ -95,6 +106,16 @@ static void Exec(commandT*, bool);
 static void RunBuiltInCmd(commandT*);
 /* checks whether a command is a builtin command */
 static bool IsBuiltIn(commandT*);
+/* returns whether a string is an alias */
+static bool IsAlias(char* name);
+/* runs an aliased command */
+static void aliascmd(commandT* cmd);
+/* adds an alias to the global list */
+static void addalias(commandT* cmd);
+/* substitues an alias for its cmdline */
+static char* subalias(char* name);
+/* removes an alias from the global list */
+static void unalias(char* name);
 /* checks what status of child process means and prints message */
 static int ChildStatus(int status,pid_t pid);
 /* print out table of jobs */
@@ -170,6 +191,15 @@ static void RunExternalCmd(commandT* cmd, bool fork)
 {
   if (ResolveExternalCmd(cmd)){
     Exec(cmd, fork);
+  }
+  else if (strcmp(cmd->argv[0],"alias")==0){
+    addalias(cmd);
+  }
+  else if (strcmp(cmd->argv[0],"unalias")==0){
+    unalias(cmd->argv[1]);
+  }
+  else if (IsAlias(cmd->argv[0])){
+    aliascmd(cmd);
   }
   else {
     printf("%s: command not found\n", cmd->argv[0]);
@@ -397,6 +427,144 @@ static void RunBuiltInCmd(commandT* cmd)
     }
   }
   return;
+}
+
+static char *subalias(char* name)
+{
+  aliasL* a = aliases;
+  while (a != NULL){
+    if (strcmp(name, a->name) == 0){
+      return a->cmdline;
+    }
+    a = a->next;
+  }
+  return NULL;
+}
+
+static void addalias(commandT* cmd)
+{
+  //print out aliases
+  if (cmd->argc == 1){
+    aliasL* a = aliases;
+    while (a != NULL){
+      printf("%s: %s\n", a->name, a->cmdline);
+      a = a->next;
+    }
+    return;
+  }
+  //make a new alias struct
+  aliasL* a = malloc(sizeof(aliasL));
+  char * name = NULL;
+
+  int argc = 0;
+  char * cmdline = NULL;
+  char *token;
+  
+  //get the first space (alias< >name="value")
+  const char s1[2] = " ";
+  //get the name when argc==1
+  const char s2[4] = "=\"'";
+
+  token = strtok(cmd->cmdline, s1);
+  while (token != NULL){
+    token = strtok(NULL, s2);
+    argc++;
+    //we got the second token, name of alias
+    if (argc == 1){
+      name = token;
+    }
+    //we got the third token, value of alias
+    else if (argc == 2){
+      cmdline = token;
+    }
+  }
+  a->cmdline = cmdline;
+  a->name = name;
+
+  //add the first alias
+  if (aliases == NULL){
+    aliases = a;
+    a->next = NULL;
+  }
+  //add alias to the front of the list
+  else{
+    a->next = aliases;
+    aliases = a;
+  }
+}
+
+static void unalias(char* name)
+{
+  aliasL* a = aliases;
+  aliasL* prev = NULL;
+  while(a != NULL){
+    //found the matching alias
+    if (strcmp(a->name, name) == 0){
+      //removing the head
+      if (a == aliases){
+        aliases = a->next;
+      }
+      //removing another
+      else{
+        prev->next = a->next;
+      }
+      free(a);
+      return;
+    }
+    prev = a;
+    a = a->next;
+  }
+  printf("unalias: %s: not found\n", name);
+}
+
+static void aliascmd(commandT* cmd)
+{
+  aliasL* a = aliases;
+  while(a != NULL){
+    if (strcmp(a->name, cmd->argv[0])==0){
+      //get the case where second arg is alias
+      if (cmd->argc == 2){
+        if (IsAlias(cmd->argv[1])){
+          char * combcmd = subalias(cmd->argv[0]);
+          //special case for piazza post about shell not finding ~/
+          if (strcmp(subalias(cmd->argv[1]), "~/") == 0){
+            strcat(combcmd, " ");
+            //gets the home directory of the current user
+            strcat(combcmd, getpwuid(getuid())->pw_dir);
+            Interpret(combcmd);
+            return;
+          }
+          strcat(combcmd, " ");
+          strcat(combcmd, subalias(cmd->argv[1]));
+          Interpret(combcmd);
+          return;
+        }
+      }
+      Interpret(a->cmdline);
+      return;
+    }
+    a = a->next;
+  }
+  printf("%s: command not found\n",cmd->argv[0]);
+
+  return;
+}
+
+static bool IsAlias(char* name)
+{
+  aliasL* a = aliases;
+  if (a == NULL){
+  //  printf("No aliases\n");
+    return FALSE;
+  }
+  while (a != NULL){
+   // printf("Comparing [%s] to [%s]\n", a->name, name);
+    if (strcmp(a->name,name) == 0){
+      return TRUE;
+    }
+    a = a->next;
+  }
+  return FALSE;
 }
 
 void CheckJobs()
