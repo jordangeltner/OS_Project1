@@ -53,7 +53,7 @@
 #define BUFSIZE 80
 
 /************Global Variables*************************************/
-
+sigset_t g_blocked;
 /************Function Prototypes******************************************/
 /* handles SIGINT and SIGSTOP signals */	
 static void sig(int);
@@ -70,7 +70,8 @@ int main (int argc, char *argv[])
   if (signal(SIGINT, sig) == SIG_ERR) PrintPError("SIGINT");
   if (signal(SIGTSTP, sig) == SIG_ERR) PrintPError("SIGTSTP");
   if (signal(SIGCHLD, sig) == SIG_ERR) PrintPError("SIGCHLD");
-  
+  sigemptyset (&g_blocked);
+  sigaddset(&g_blocked,SIGCHLD);
 
   while (!forceExit) /* repeat forever */
   {
@@ -101,10 +102,10 @@ int main (int argc, char *argv[])
 
 static void sig(int signo)
 {
+  sigprocmask(SIG_SETMASK,&g_blocked,NULL);
   int status;
   if(signo==SIGCHLD){
     pid_t pid = waitpid(-1,&status,WNOHANG | WUNTRACED | WCONTINUED);
-    printf("SIGCHLD pid:%d\n",pid);
     while(pid>0){
       if(getfgpgid()==pid){
 	//foreground, so release the busy loop
@@ -116,14 +117,14 @@ static void sig(int signo)
       }
       pid = waitpid(-1,&status,WNOHANG | WUNTRACED | WCONTINUED);
     }
+    sigprocmask(SIG_UNBLOCK,&g_blocked,NULL);
     return;
   }
   pid_t pid = waitpid(-1,&status,WNOHANG | WUNTRACED | WCONTINUED);
   while(pid>0){
-    printf("fgpgid:%d  pid:%d exited:%d\n",getfgpgid(), pid, WIFEXITED(status));
-    fflush(stdout);
     pid = waitpid(-1,&status,WNOHANG | WUNTRACED);
   }
+  sigprocmask(SIG_UNBLOCK,&g_blocked,NULL);
   //kill(0,signo);
   return;
 }

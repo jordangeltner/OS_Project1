@@ -293,37 +293,22 @@ static void Exec(commandT* cmd, bool forceFork)
       setpgid(0,0);
       //unblock SIGCHLD signals, so that it can detect them from the exec
       sigprocmask(SIG_UNBLOCK,&childset,NULL);
-//       if (cmd->bg != 0){
-// 	setpgid(0,0);
-//       }
-//       //foreground job, so set pgid to -ppid
-//       else{
-// 	printf("CHILD: ppid:%d  pid:%d  pgid:%d\n",getppid(),getpid(),getpgid(getpid()));
-// 	fflush(stdout);
-//       }
-      //printf("Running command %s in the fork.\n", cmd->name);
-      if (-1 == execv(cmd->name, cmd->argv))
+      if (-1 == execv(cmd->name, cmd->argv)){
+	printf("cmd:%s about to exit badly.\n", cmd->name);
+	fflush(stdout);
         _exit(EXIT_FAILURE);
+      }
+      //never runs.
       _exit(EXIT_SUCCESS);
     }
     //parent's execution
     else
     {
-      //sigprocmask(SIG_UNBLOCK,&childset,NULL);
-      //printf("Parent of: %d\n", childId);
       if (cmd->bg == 0)
       {
-	printf("fg:%s pid:%d ppid:%d\n",cmd->cmdline,childId,getpid());
-	fflush(stdout);
-// 	printf("PARENT: ppid:%d  pid:%d  pgid:%d\n",getppid(),getpid(),getpgid(getpid()));
-// 	fflush(stdout);
 	//unblock SIGCHLD signals, because waiting on a fg job_id
-	sigprocmask(SIG_UNBLOCK,&childset,NULL);
-	g_fgpgid = childId;
-	
+	g_fgpgid = childId;	
 	waitfg();
-	printf("passed waitfg loop for fg:%s\n",cmd->cmdline);
-	fflush(stdout);
 	g_waitfg = TRUE;
 	
         //waitpid(childId, &status, 0);
@@ -340,6 +325,8 @@ static void Exec(commandT* cmd, bool forceFork)
   }
   else
   {
+    printf("SHOULD NOT BE HERE\n");
+    fflush(stdout);
     execv(cmd->name, cmd->argv);
   }
   return; 
@@ -347,8 +334,6 @@ static void Exec(commandT* cmd, bool forceFork)
 
 static void addjob(commandT* cmd, pid_t childId)
 {
-  printf("bg:%s pid:%d ppid:%d\n",cmd->cmdline,childId,getpid());
-  fflush(stdout);
   bgjobL *job = bgjobs;
   bgjobL *prev = NULL;
 
@@ -399,13 +384,18 @@ int edit_bgjob_status(pid_t pid, int status){
       job->status = status;
       return 0;
     }
+    job = job->next;
   }
   return -1;
 }
 
 static void waitfg(){
+  sigset_t childset;
+  sigemptyset (&childset);
+  sigaddset(&childset,SIGCHLD);
   while (g_waitfg){
     sleep(1);
+    sigprocmask(SIG_UNBLOCK,&childset,NULL);
   }
   return;
 }
