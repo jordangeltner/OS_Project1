@@ -501,7 +501,7 @@ static void addalias(commandT* cmd)
   if (cmd->argc == 1){
     aliasL* a = aliases;
     while (a != NULL){
-      printf("%s: %s\n", a->name, a->cmdline);
+      printf("alias %s='%s'\n", a->name, a->cmdline);
       a = a->next;
     }
     return;
@@ -535,15 +535,38 @@ static void addalias(commandT* cmd)
   a->cmdline = cmdline;
   a->name = name;
 
-  //add the first alias
-  if (aliases == NULL){
-    aliases = a;
-    a->next = NULL;
+  //add the alias alphabetically
+  aliasL* current = aliases;
+  aliasL* prev = current;
+  int cmp = 0;
+  while(current != NULL){
+    cmp = strcmp(current->name, a->name);
+    //new alias is ahead of current in alphabet so insert
+    // new order: prev -> a -> current
+    if (cmp > 0){
+      if (prev == current){
+        a->next = current;
+        aliases = a;
+      }
+      else{
+        prev->next = a;
+        a->next = current;
+      }
+      return;
+    }
+    //new alias is after current so go to next
+    prev = current;
+    current = current->next;
   }
-  //add alias to the front of the list
-  else{
-    a->next = aliases;
+  //there is no one so we're first
+  if (aliases == NULL){
+    a->next = NULL;
     aliases = a;
+  }
+  //we exited the loop without assigning so we're last
+  else{
+    prev->next = a;
+    a->next = NULL;
   }
 }
 
@@ -731,20 +754,8 @@ static void fgcall(commandT* cmd){
 static void jobscall()
 {
   bgjobL *job = bgjobs;
-//   char current;
   while(job != NULL){
     char* state;
-//     if(k==1){
-//       current = '+';
-//     }
-//     else if(k==2){
-//       current = '-';
-//     }
-//     else{
-//       current = ' ';
-//     }
-    //test cases don't have this..
-//     current = ' ';
     int childstatus = ChildStatus(job->status,job->pid);
     //check the status of child process
     if (childstatus ==-1){
