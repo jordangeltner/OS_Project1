@@ -135,6 +135,8 @@ static void waitfg();
 void set_waitfg();
 /*finds and returns a job from the job list based on job id*/
 static bgjobL* findjob(int);
+/*removes a job from the list given job id*/
+static bgjobL* removejob(int);
 /************External Declaration******************************************/
 
 /**************Implementation***********************************************/
@@ -622,8 +624,6 @@ static bool IsAlias(char* name)
 void CheckJobs()
 {
   bgjobL *job = bgjobs;
-  bgjobL *old_job = bgjobs;
-  bgjobL *prev_job = NULL;
   int jid = 0;
   char* state;
   char* cmdstring;
@@ -639,24 +639,9 @@ void CheckJobs()
     else if(childstatus==0) {
       //child process exited
       state = strdup("Done                    ");
-      if(prev_job == NULL){
-	// free up memory used by old job, move pointer to next
-	bgjobs = job->next;
-	old_job = job;
-	ReleaseCmdT(&old_job->cmd);
-	free(old_job);
-	job = bgjobs;
-      }
-      else{
-	prev_job->next = job->next;
-	old_job = job;
-	ReleaseCmdT(&old_job->cmd);
-	free(old_job);
-	job = prev_job->next;
-      }
+      removejob(jid);
       printf("[%d]   %s %s\n", jid, state, cmdstring);
       fflush(stdout);
-      continue;
     }
     else{
       //child stopped
@@ -664,10 +649,34 @@ void CheckJobs()
        printf("[%d]   %s %s\n", jid,state, cmdstring);
        fflush(stdout);
     }
-    prev_job = job;
     job = job->next;
   }
   
+}
+
+//removes job from list and returns the head.
+static bgjobL* removejob(int jid){
+  bgjobL* job = findjob(jid);
+  if(job==NULL){
+    //jid not valid
+    return NULL;
+  }
+  else if(job==bgjobs){
+    //head of list
+    // free up memory used by old job, move pointer to next
+    bgjobs = job->next;
+    ReleaseCmdT(&job->cmd);
+    free(job);
+    return bgjobs;
+  }
+  else{
+    //not head of list
+    bgjobL* prev_job = findjob(jid-1);
+    prev_job->next = job->next;
+    ReleaseCmdT(&job->cmd);
+    free(job);
+    return bgjobs;
+  }
 }
 
 static void fgcall(commandT* cmd){
@@ -675,18 +684,15 @@ static void fgcall(commandT* cmd){
   pid_t target = -1;
   //no argument given, foreground default value from joblist if there is one
   if (cmd->argc == 1){
-    target = job->pid;
+    job = findjob(0);
+    if(job!=NULL)
+      target = job->pid;
   }
   //match either job_id or job number to joblist
   else{
-    pid_t match_id = atoi(cmd->argv[1]);
-    while(job != NULL){
-      if (match_id == job->jid || match_id == job->pid){
-        target = job->pid;
-        break;
-      }
-      job = job->next;
-    }
+    job = findjob(atoi(cmd->argv[1]));
+    if(job!=NULL)
+      target = job->pid;
   }
   if (target > 0){
     int childstatus = ChildStatus(job->status,target);
@@ -694,16 +700,18 @@ static void fgcall(commandT* cmd){
       //done
       printf("[%d]   Done                     %s\n",job->jid,job->cmd->cmdline);
       fflush(stdout);
+      removejob(job->jid);
     }
-    else if(childstatus ==-1) {
+    else if(childstatus ==1) {
       //stopped
-      
       printf("[%d]   Stopped                  %s\n", job->jid,job->cmd->cmdline);
       fflush(stdout);
+      removejob(job->jid);
     }
     else{
       //running
       g_fgpgid = target;
+      removejob(job->jid);
       waitfg();
       g_waitfg = TRUE;
     }
