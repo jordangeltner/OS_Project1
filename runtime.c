@@ -133,6 +133,8 @@ pid_t getfgpgid();
 static void waitfg();
 /*sets global g_waitfg to false, used by sig handler to indicate that a fg job is finished without reaping it */
 void set_waitfg();
+/*finds and returns a job from the job list based on job id*/
+static bgjobL* findjob(int);
 /************External Declaration******************************************/
 
 /**************Implementation***********************************************/
@@ -289,6 +291,10 @@ static void Exec(commandT* cmd, bool forceFork)
     //we're in the child
     else if (childId == 0)
     {
+      //signals in children, should do default behavior, instead of sig handler
+      if (signal(SIGINT, SIG_DFL) == SIG_ERR) PrintPError("SIGINT");
+      if (signal(SIGTSTP, SIG_DFL) == SIG_ERR) PrintPError("SIGTSTP");
+      if (signal(SIGCONT,SIG_DFL)==SIG_ERR) PrintPError("SIGCONT");
       //child job, so set unique pgid
       setpgid(0,0);
       //unblock SIGCHLD signals, so that it can detect them from the exec
@@ -394,8 +400,8 @@ static void waitfg(){
   sigemptyset (&childset);
   sigaddset(&childset,SIGCHLD);
   while (g_waitfg){
-    sleep(1);
     sigprocmask(SIG_UNBLOCK,&childset,NULL);
+    sleep(1);
   }
   return;
 }
@@ -420,14 +426,18 @@ static void RunBuiltInCmd(commandT* cmd)
   //hardcoded commands
   //bg
   if((strcmp(cmd->argv[0],"bg")==0) && (bgjobs!=NULL)){
-    //send signal to most recent bg job (head of job list)
+    //send signal to most recent bg job (end of job list)
+    bgjobL* job = NULL;
     if(cmd->argv[1]==NULL){
-      kill(bgjobs->pid,SIGCONT);
+      job = findjob(0);
+      if(job!=NULL)
+	kill(job->pid,SIGCONT);
     }
     //send signal to specified pid
     else{
-      pid_t localpid = atoi(cmd->argv[1]);
-      kill(localpid,SIGCONT);
+      job = findjob(atoi(cmd->argv[1]));
+      if(job!=NULL)
+	kill(job->pid,SIGCONT);
     }
   }
   else if(strcmp(cmd->argv[0],"jobs")==0){
@@ -447,6 +457,30 @@ static void RunBuiltInCmd(commandT* cmd)
   return;
 }
 
+//returns job, located with jid arg. Returns NULL when job does not exist.
+static bgjobL* findjob(int jid){
+  bgjobL* job = bgjobs;
+  if(jid==0){
+    //find highest jid (most recent job) and return job
+    while(job!=NULL){
+      if(job->next==NULL){
+	return job;
+      }
+      job = job->next;
+    }
+    return NULL;
+  }
+  else{
+    //find matching jid on list and return job
+    while(job!=NULL){
+      if(job->jid==jid){
+	return job;
+      }
+      job = job->next;
+    }
+    return NULL;
+  }
+}
 static char *subalias(char* name)
 {
   aliasL* a = aliases;
@@ -590,14 +624,14 @@ void CheckJobs()
   bgjobL *job = bgjobs;
   bgjobL *old_job = bgjobs;
   bgjobL *prev_job = NULL;
-  int k = 0;
+  int jid = 0;
   char* state;
   char* cmdstring;
   int childstatus;
   while(job != NULL){
-    k++;
     cmdstring = strdup(job->cmd->cmdline);
     childstatus = ChildStatus(job->status,job->pid);
+    jid = job->jid;
     if (childstatus==-1){
       //child running
       state = strdup("Running                 ");
@@ -620,14 +654,14 @@ void CheckJobs()
 	free(old_job);
 	job = prev_job->next;
       }
-      printf("[%d]   %s %s\n", k, state, cmdstring);
+      printf("[%d]   %s %s\n", jid, state, cmdstring);
       fflush(stdout);
       continue;
     }
     else{
       //child stopped
       state = strdup("Stopped                 ");
-       printf("[%d]   %s %s\n", k,state, cmdstring);
+       printf("[%d]   %s %s\n", jid,state, cmdstring);
        fflush(stdout);
     }
     prev_job = job;
@@ -638,7 +672,6 @@ void CheckJobs()
 
 static void fgcall(commandT* cmd){
   bgjobL *job = bgjobs;
-  int k = 0;
   pid_t target = -1;
   //no argument given, foreground default value from joblist if there is one
   if (cmd->argc == 1){
@@ -648,8 +681,7 @@ static void fgcall(commandT* cmd){
   else{
     pid_t match_id = atoi(cmd->argv[1]);
     while(job != NULL){
-      k++;
-      if (match_id == k || match_id == job->pid){
+      if (match_id == job->jid || match_id == job->pid){
         target = job->pid;
         break;
       }
@@ -660,12 +692,13 @@ static void fgcall(commandT* cmd){
     int childstatus = ChildStatus(job->status,target);
     if(childstatus==0){
       //done
-      printf("[1] Done                     %s\n", job->cmd->cmdline);
+      printf("[%d]   Done                     %s\n",job->jid,job->cmd->cmdline);
       fflush(stdout);
     }
     else if(childstatus ==-1) {
       //stopped
-      printf("Stopped                  %s\n", job->cmd->cmdline);
+      
+      printf("[%d]   Stopped                  %s\n", job->jid,job->cmd->cmdline);
       fflush(stdout);
     }
     else{
@@ -719,7 +752,7 @@ static void jobscall()
       state = strdup("Stopped                 ");
     }
     // add command line to job list
-    printf("[%d]   %s %s &\n", job->jid, state, job->cmd->cmdline);
+    printf("[%d]   %s %s&\n", job->jid, state, job->cmd->cmdline);
     fflush(stdout);
     job = job->next;
   }

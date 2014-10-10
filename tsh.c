@@ -69,6 +69,7 @@ int main (int argc, char *argv[])
   /* shell initialization */
   if (signal(SIGINT, sig) == SIG_ERR) PrintPError("SIGINT");
   if (signal(SIGTSTP, sig) == SIG_ERR) PrintPError("SIGTSTP");
+  if (signal(SIGCONT,sig)==SIG_ERR) PrintPError("SIGCONT");
   if (signal(SIGCHLD, sig) == SIG_ERR) PrintPError("SIGCHLD");
   sigemptyset (&g_blocked);
   sigaddset(&g_blocked,SIGCHLD);
@@ -120,12 +121,8 @@ static void sig(int signo)
     sigprocmask(SIG_UNBLOCK,&g_blocked,NULL);
     return;
   }
-  pid_t pid = waitpid(-1,&status,WNOHANG | WUNTRACED | WCONTINUED);
-  while(pid>0){
-    pid = waitpid(-1,&status,WNOHANG | WUNTRACED);
-  }
-  sigprocmask(SIG_UNBLOCK,&g_blocked,NULL);
-  //kill(0,signo);
+  if(getfgpgid()!=1 && getfgpgid()!=getpid() && getfgpgid()!=getppid())
+    kill(-getfgpgid(),signo);
   return;
 }
 
