@@ -181,5 +181,8 @@ EXTERN void CheckJobs();
 EXTERN pid_t getfgpgid();
 EXTERN void set_waitfg();
 EXTERN int edit_bgjob_status(pid_t,int);
+EXTERN int addjob(commandT*,pid_t);
+EXTERN commandT* getfgcmd();
+EXTERN void ReleaseCmdT(commandT**);
 
 #endif /* __RUNTIME_H__ */

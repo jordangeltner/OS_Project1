@@ -36,6 +36,7 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 /************Private include**********************************************/
 #include "tsh.h"
@@ -73,6 +74,9 @@ int main (int argc, char *argv[])
   if (signal(SIGCHLD, sig) == SIG_ERR) PrintPError("SIGCHLD");
   sigemptyset (&g_blocked);
   sigaddset(&g_blocked,SIGCHLD);
+  sigaddset(&g_blocked,SIGTSTP);
+  sigaddset(&g_blocked,SIGINT);
+  sigaddset(&g_blocked,SIGCONT);
 
   while (!forceExit) /* repeat forever */
   {
@@ -97,6 +101,8 @@ int main (int argc, char *argv[])
   }
 
   /* shell termination */
+  commandT* holdcmd = getfgcmd();
+  ReleaseCmdT(&holdcmd);
   free(cmdLine);
   return 0;
 } /* end main */
@@ -121,8 +127,28 @@ static void sig(int signo)
     sigprocmask(SIG_UNBLOCK,&g_blocked,NULL);
     return;
   }
-  if(getfgpgid()!=1 && getfgpgid()!=getpid() && getfgpgid()!=getppid())
-    kill(-getfgpgid(),signo);
+  //are you the shell? Send signal on to fg child
+  if(getfgpgid()!=1 && getfgpgid()!=getpid() && getfgpgid()!=getppid()){
+    int jid=0;
+    switch (signo){
+      case SIGTSTP:
+// 	printf("about to addjob cmd:%s  pid:%d\n",getfgcmd()->cmdline,getfgpgid());
+// 	fflush(stdout);
+	jid = addjob(getfgcmd(),getfgpgid());
+	break;
+    }
+    kill(getfgpgid(),signo);
+    if(signo==SIGTSTP){
+      waitpid(getfgpgid(),&status,WUNTRACED);
+      edit_bgjob_status(getfgpgid(),status);
+      printf("[%d]   Stopped                 %s\n",jid,getfgcmd()->cmdline);
+      set_waitfg();
+    }
+    else if (signo==SIGINT){
+      set_waitfg();
+    }
+  }
+  sigprocmask(SIG_UNBLOCK,&g_blocked,NULL);
   return;
 }
 

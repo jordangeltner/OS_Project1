@@ -1,27 +1,73 @@
-Manual page for William Gross' and Jordan Geltner's tsh implementation for EECS 343 in the Fall of 2014 at Northwestern University.
-
-Structure:
-	Main loop in tsh.c which runs all the callbacks:
-		-Read the command line in
-		-Check the status of current jobs
-		-Interpret and execute the command line
-		-Signal handler sig runs in the background here to catch any SIGCHLD, SIGINT, SIGTSTP
+tsh(1)                User Manuals                    tsh(1)
 
 
----Main Methods---
-	-Interpreter parses the command line and calls runtime.c::RunCmd in order to execute them.
-	-RunCmd runs the command in the fork or pipe, depending on the inpurt. We have not implemented pipe, so everything gets run in RunCmdFork.
-	-RunCmdFork differentiates between external and BuiltIn commands, which have different calling conventions.
-	-RunBuiltInCmd strcmps the argument against some builtin commands(bg, fg, jobs, fork, cd)
-	-RunExternalCmd if given an external command, passes it to Exec. It also contains the calling locations for all alias-related commands.
-	-Exec is where most of the magic happens. We first set up the signal blocking and then fork a new process. We then make a call to execv to run the given command, or if in the parent we wait on the child. We also add the new job here to our global joblist.
+NAME
+    tsh - a simple shell implementation
+    
+SYNOPSIS
+    ./tsh
+    
+DESCRIPTION
+    tsh simulates a simple shell by waiting on stdin to 
+    trigger its callbacks, which include an interpreter, a 
+    command-line parser, a signal handler, and a job status 
+    checker.
+    
+    STRUCTURE
+    Main Methods
+        Interpreter parses the command line and calls 
+        runtime.c::RunCmd in order to execute them. RunCmd 
+        runs the command in the fork or pipe, depending on 
+        the inpurt. We have not implemented pipe, so 
+        everything gets run in RunCmdFork. RunCmdFork 
+        differentiates between external and BuiltIn 
+        commands, which have different calling conventions.
+        RunBuiltInCmd strcmps the argument against some 
+        builtin commands(bg, fg, jobs, fork, cd). 
+        RunExternalCmd if given an external command, passes 
+        it to Exec. It also contains the calling locations 
+        for all alias-related commands.    Exec is where 
+		most of the magic happens. We first set up the 
+		signal blocking and then fork a new process. 
+        We then make a call to execv to run the given 
+        command, or if in the parent we wait on the child. 
+        We also add the new job here to our global joblist.
 
----Assorted Methods---
-	-addjob simply mallocs a new job struct and then goes through the job list to add it to the end.
-	-addalias takes care of adding any new alias to the global alias list (in alphabetical order) and printing off the stored aliases.
-	-subalias substitues a string alias name for its commandline
-	-unalias removes an alias from the list and frees the memory
-	-aliascmd runs the actual alias by calling execv on its cmdline. There is also a hard-coded solution here to the "~/ problem" that was noted in Piazza. Our shell oes not recognize ~ or ~/ at all, so we use getpwuid(getuid())->pw_dir) to return the current user's home directory. 
-	-IsAlias checks the alias list for a matching name.
-	-CheckJobs iterates through the job list, printing out a status message for each job as well as reaping any terminated processes.
-	-ChildStatus uses the WIFXXXX functions to print out status about processes.
+    Assorted Methods
+        <addjob> simply mallocs a new job struct and then 
+        goes through the job list to add it to the end. 
+        
+        <addalias> takes care of adding any new alias to the
+        global alias list (in alphabetical order) and 
+        printing off the stored aliases.
+        
+        <subalias> substitues a string alias name for its 
+        commandline.
+        
+        <unalias> removes an alias from the list and frees 
+        the memory.
+        
+        <aliascmd> runs the actual alias by calling execv on
+        its cmdline. There is also a hard-coded solution 
+        here to the "~/ problem" that was noted in Piazza. 
+        Our shell oes not recognize ~ or ~/ at all, so we 
+        use getpwuid(getuid())->pw_dir) to return the 
+        current user's home directory. 
+        
+        <IsAlias> checks the alias list for a matching name.
+        
+        <CheckJobs> iterates through the job list, printing 
+        out a status message for each job as well as reaping
+        any terminated processes.
+        
+        <ChildStatus> uses the WIFXXXX functions to print 
+        out status about processes.
+        
+        <getLowJid> searches the job list slowly ~O(n!) to 
+        find the lowest available job id to assign to a new
+        job.
+
+    Extra Credit
+        We implemented the alias command and associates, 
+        allowing us to pass the    associated tests in the 
+        handout files.

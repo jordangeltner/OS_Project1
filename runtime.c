@@ -93,6 +93,8 @@ pid_t g_fgpgid = 1;
 // flag that indicates whether we should continue waiting on a foreground process or not.
 bool g_waitfg = TRUE;
 
+// holds command line information of current foreground job.
+commandT* g_fgcmd = NULL;
 
 /************Function Prototypes******************************************/
 /* run command */
@@ -122,7 +124,7 @@ static int ChildStatus(int status,pid_t pid);
 /* print out table of jobs */
 static void jobscall();
 /* adds a job to the job list */
-static void addjob(commandT* cmd, pid_t childId);
+int addjob(commandT* cmd, pid_t childId);
 /* finds the lowest available jid */
 static pid_t getLowJid();
 /* foreground the given job or the next one */
@@ -137,11 +139,17 @@ void set_waitfg();
 static bgjobL* findjob(int);
 /*removes a job from the list given job id*/
 static bgjobL* removejob(int);
+/*copies a cmd struct*/
+static commandT* CopyCmdT(commandT*);
+/*returns sizeof a ptr*/
+int ptrsize(char *ptr);
 /************External Declaration******************************************/
 
 /**************Implementation***********************************************/
 
-
+commandT* getfgcmd(){
+  return g_fgcmd;
+}
 pid_t getfgpgid(){
   return g_fgpgid;
 }
@@ -164,6 +172,13 @@ void RunCmd(commandT** cmd, int n)
 //  printf("arg1:%s   arg2:%s",cmd[0]->argv[0],cmd[0]->argv[1]);
 void RunCmdFork(commandT* cmd, bool fork)
 {
+  sigset_t childset;
+  sigemptyset (&childset);
+  sigaddset(&childset,SIGCHLD);
+  sigaddset(&childset,SIGTSTP);
+  sigaddset(&childset,SIGINT);
+  sigaddset(&childset,SIGCONT);
+  sigprocmask(SIG_SETMASK,&childset,NULL);
   if (cmd->argc<=0)
     return;
   if (IsBuiltIn(cmd))
@@ -271,13 +286,13 @@ static void Exec(commandT* cmd, bool forceFork)
   if (forceFork)
   {
     //block SIGCHLD signals so that we will not receive one until the job has been executed
-    sigset_t blocked;
-    sigemptyset (&blocked);
-    sigaddset(&blocked,SIGCHLD);
-    sigprocmask(SIG_SETMASK,&blocked,NULL);
+    
     sigset_t childset;
     sigemptyset (&childset);
     sigaddset(&childset,SIGCHLD);
+    sigaddset(&childset,SIGTSTP);
+    sigaddset(&childset,SIGINT);
+    sigaddset(&childset,SIGCONT);
     pid_t childId = fork();
     //int status;
     
@@ -315,7 +330,8 @@ static void Exec(commandT* cmd, bool forceFork)
       if (cmd->bg == 0)
       {
 	//unblock SIGCHLD signals, because waiting on a fg job_id
-	g_fgpgid = childId;	
+	g_fgpgid = childId;
+	g_fgcmd = cmd;
 	waitfg();
 	g_waitfg = TRUE;
 	
@@ -340,7 +356,7 @@ static void Exec(commandT* cmd, bool forceFork)
   return; 
 }
 
-static void addjob(commandT* cmd, pid_t childId)
+int addjob(commandT* cmd, pid_t childId)
 {
   bgjobL *job = bgjobs;
   bgjobL *prev = NULL;
@@ -355,8 +371,10 @@ static void addjob(commandT* cmd, pid_t childId)
   job = malloc(sizeof(bgjobL));
   job->pid = childId;
   job->next = NULL;
+  int bgtmp = cmd->bg;
   job->cmd = CreateCmdT(cmd->argc);
   job->cmd->cmdline = cmd->cmdline;
+  job->cmd->bg = bgtmp;
   job->status = -1;
   job->jid = getLowJid();
 
@@ -365,6 +383,7 @@ static void addjob(commandT* cmd, pid_t childId)
     bgjobs = job;
   else
     prev->next = job;
+  return job->jid;
 }
 
 static pid_t getLowJid()
@@ -401,6 +420,9 @@ static void waitfg(){
   sigset_t childset;
   sigemptyset (&childset);
   sigaddset(&childset,SIGCHLD);
+  sigaddset(&childset,SIGTSTP);
+  sigaddset(&childset,SIGINT);
+  sigaddset(&childset,SIGCONT);
   while (g_waitfg){
     sigprocmask(SIG_UNBLOCK,&childset,NULL);
     sleep(1);
@@ -424,6 +446,13 @@ static bool IsBuiltIn(commandT* cmd)
 
 static void RunBuiltInCmd(commandT* cmd)
 {
+  sigset_t childset;
+  sigemptyset (&childset);
+  sigaddset(&childset,SIGCHLD);
+  sigaddset(&childset,SIGTSTP);
+  sigaddset(&childset,SIGINT);
+  sigaddset(&childset,SIGCONT);
+  sigprocmask(SIG_SETMASK,&childset,NULL);
   cmd->name = cmd->argv[0];
   //hardcoded commands
   //bg
@@ -432,14 +461,20 @@ static void RunBuiltInCmd(commandT* cmd)
     bgjobL* job = NULL;
     if(cmd->argv[1]==NULL){
       job = findjob(0);
-      if(job!=NULL)
+      if(job!=NULL){
+	job->cmd->bg = 1;
+	job->status = -1;
 	kill(job->pid,SIGCONT);
+      }
     }
     //send signal to specified pid
     else{
       job = findjob(atoi(cmd->argv[1]));
-      if(job!=NULL)
+      if(job!=NULL){
+	job->cmd->bg = 1;
+	job->status = -1;
 	kill(job->pid,SIGCONT);
+      }
     }
   }
   else if(strcmp(cmd->argv[0],"jobs")==0){
@@ -669,8 +704,8 @@ void CheckJobs()
     else{
       //child stopped
       state = strdup("Stopped                 ");
-       printf("[%d]   %s %s\n", jid,state, cmdstring);
-       fflush(stdout);
+   //    printf("[%d]   %s %s\n", jid,state, cmdstring);
+    //   fflush(stdout);
     }
     job = job->next;
   }
@@ -719,21 +754,22 @@ static void fgcall(commandT* cmd){
   }
   if (target > 0){
     int childstatus = ChildStatus(job->status,target);
+    g_fgpgid = job->pid;
+    g_fgcmd = CopyCmdT(job->cmd);
     if(childstatus==0){
       //done
-      printf("[%d]   Done                     %s\n",job->jid,job->cmd->cmdline);
+      printf("[%d]   Done                    %s\n",job->jid,job->cmd->cmdline);
       fflush(stdout);
       removejob(job->jid);
     }
     else if(childstatus ==1) {
       //stopped
-      printf("[%d]   Stopped                  %s\n", job->jid,job->cmd->cmdline);
-      fflush(stdout);
+ //     printf("[%d]   Stopped                 %s\n", job->jid,job->cmd->cmdline);
+ //     fflush(stdout);
       removejob(job->jid);
     }
     else{
       //running
-      g_fgpgid = target;
       removejob(job->jid);
       waitfg();
       g_waitfg = TRUE;
@@ -771,10 +807,17 @@ static void jobscall()
       state = strdup("Stopped                 ");
     }
     // add command line to job list
-    printf("[%d]   %s %s&\n", job->jid, state, job->cmd->cmdline);
-    fflush(stdout);
+    if(job->cmd->bg==0){
+      printf("[%d]   %s%s\n", job->jid, state, job->cmd->cmdline);
+      fflush(stdout);
+    }
+    else{
+      printf("[%d]   %s%s&\n", job->jid, state, job->cmd->cmdline);
+      fflush(stdout);
+    }
     job = job->next;
   }
+
   
 }
 
@@ -790,18 +833,42 @@ int ChildStatus(int status,pid_t pid)
  }
  if (WIFEXITED(status))
    return 0;
- else if (WIFSIGNALED(status)){
-   printf("Process %d received a signal.\n",pid);
-   fflush(stdout);
- }
  else if (WIFSTOPPED(status)){
-   printf("Process %d was stopped while executing.\n",pid);
-   fflush(stdout);
+ //  printf("Process %d was stopped while executing.\n",pid);
+//   fflush(stdout);
    return 1;
+ }
+ else if (WIFSIGNALED(status)){
+ //  printf("Process %d received a signal.\n",pid);
+ //  fflush(stdout);
  }
  return 0;
 }
+static commandT* CopyCmdT(commandT* cmd){
+  commandT* newcmd = CreateCmdT(cmd->argc);
+  newcmd->cmdline = malloc(ptrsize(cmd->cmdline));
+  strcpy(newcmd->cmdline,cmd->cmdline);
+  return newcmd;
+}
+//returns the size of a character array using a pointer to the first element of the character array
+int ptrsize(char *ptr)
+{
+    //variable used to access the subsequent array elements.
+    int offset = 0;
+    //variable that counts the number of elements in your array
+    int count = 0;
 
+    //While loop that tests whether the end of the array has been reached
+    while (*(ptr + offset) != '\0')
+    {
+        //increment the count variable
+        ++count;
+        //advance to the next element of the array
+        ++offset;
+    }
+    //return the size of the array
+    return count;
+}
 commandT* CreateCmdT(int n)
 {
   int i;
