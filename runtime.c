@@ -537,6 +537,7 @@ static void addalias(commandT* cmd)
     aliasL* a = aliases;
     while (a != NULL){
       printf("alias %s='%s'\n", a->name, a->cmdline);
+      fflush(stdout);
       a = a->next;
     }
     return;
